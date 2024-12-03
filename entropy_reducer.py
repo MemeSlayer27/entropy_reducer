@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Optional
 
+N_CATEGORIES = 5
+
 class EnhancedQuestionOrderer:
     def __init__(self, historical_responses: np.ndarray, n_latent_factors: int = None, 
                  question_labels: Optional[List[str]] = None, verbose: bool = True):
@@ -114,36 +116,43 @@ class EnhancedQuestionOrderer:
     def _estimate_optimal_factors(self) -> int:
         """
         Estimate optimal number of latent factors using parallel analysis
+        with correlation matrices and multiple criteria.
+        
+        Returns:
+            int: Optimal number of factors
         """
         if self.verbose:
             print("\nEstimating optimal number of factors...")
             
-        n_datasets = 100
-        max_factors = min(self.n_questions - 1, 10)
-        real_data = np.zeros(max_factors)
-        random_data = np.zeros(max_factors)
-        
-        real_evals = np.linalg.eigvals(np.cov(self.standardized_responses.T))
+        # Calculate correlation matrix for actual data
+        corr_matrix = np.corrcoef(self.standardized_responses.T)
+        real_evals = np.linalg.eigvals(corr_matrix)
         real_evals.sort()
-        real_evals = real_evals[::-1]
+        real_evals = real_evals[::-1]  # Sort in descending order
         
-        for i in range(n_datasets):
-            random_resp = np.random.normal(size=self.standardized_responses.shape)
-            random_evals = np.linalg.eigvals(np.cov(random_resp.T))
-            random_evals.sort()
-            random_evals = random_evals[::-1]
-            # Truncate to max_factors
-            random_evals = random_evals[:max_factors]
-            random_data += random_evals     
-
-
-        random_data /= n_datasets
+        # Generate random correlation matrices
+        n_iterations = 100
+        n_vars = self.standardized_responses.shape[1]
+        max_factors = min(n_vars - 1, 10)  # Cap at 10 factors
+        random_evals = np.zeros(max_factors)
         
-        # Visualize parallel analysis
+        for _ in range(n_iterations):
+            # Generate random normal data with same shape
+            random_data = np.random.normal(size=self.standardized_responses.shape)
+            # Get correlation matrix and eigenvalues
+            random_corr = np.corrcoef(random_data.T)
+            evals = np.linalg.eigvals(random_corr)
+            evals.sort()
+            random_evals += evals[::-1][:max_factors]
+        
+        # Average the random eigenvalues
+        random_evals /= n_iterations
+        
+        # Visualization
         plt.figure(figsize=(10, 6))
         plt.plot(range(1, max_factors + 1), real_evals[:max_factors], 
                 'b-', label='Actual Data')
-        plt.plot(range(1, max_factors + 1), random_data[:max_factors], 
+        plt.plot(range(1, max_factors + 1), random_evals, 
                 'r--', label='Random Data')
         plt.xlabel('Factor Number')
         plt.ylabel('Eigenvalue')
@@ -151,13 +160,26 @@ class EnhancedQuestionOrderer:
         plt.legend()
         plt.show()
         
-        # Find optimal number
+        # Apply multiple criteria for factor selection:
+        # 1. Kaiser criterion (eigenvalue > 1)
+        # 2. Parallel analysis (actual > random)
+        # 3. Proportion of variance explained
+        
+        cumulative_variance = np.cumsum(real_evals) / np.sum(real_evals)
+        
         for i in range(max_factors):
-            if real_evals[i] < random_data[i]:
-                if self.verbose:
-                    print(f"Optimal number of factors: {i}")
-                return i
-                
+            # Stop if eigenvalue is less than 1 (Kaiser criterion)
+            if real_evals[i] < 1:
+                return max(1, i)
+            
+            # Stop if eigenvalue is less than random data
+            if real_evals[i] < random_evals[i]:
+                return max(1, i)
+            
+            # Stop if we explain 80% of variance
+            if cumulative_variance[i] > 0.8:
+                return max(1, i + 1)
+        
         return max_factors
     
     def _calculate_polychoric_correlation(self) -> np.ndarray:
@@ -223,14 +245,25 @@ class EnhancedQuestionOrderer:
             factor_determination = max([abs(self.fa.components_[i, q]) 
                                      for q in answered_questions], default=0)
             explained_variance += loading**2 * (1 - factor_determination)
-            
-        residual_entropy = -np.log2(1 - min(explained_variance, 0.9999))
+
+        residual_variance = max(1e-10, 1-explained_variance)
+    
+        # Base entropy from continuous approximation
+        continuous_entropy = 0.5 * np.log(2 * np.pi * np.e * residual_variance)
+        
+        # Correction for discretization
+        # Using mutual information between continuous and discretized variable
+        width = np.sqrt(residual_variance) / N_CATEGORIES
+        discretization_loss = -np.log(width)
         
         if self.verbose:
-            print(f"\nResidual entropy for {self.question_labels[question_idx]}: {residual_entropy:.3f}")
+            print(f"\nResidual entropy for {self.question_labels[question_idx]}: {continuous_entropy:.3f}")
             print(f"Explained variance: {explained_variance:.3f}")
-            
-        return residual_entropy
+
+        # Additional correction for ordinal nature
+        ordinal_correction = np.log(N_CATEGORIES)
+        
+        return max(0, continuous_entropy - discretization_loss + ordinal_correction)  
 
     def calculate_information_gain(self, 
                                  question_idx: int,
@@ -241,14 +274,14 @@ class EnhancedQuestionOrderer:
         if self.verbose:
             print(f"\nCalculating information gain for {self.question_labels[question_idx]}")
             
-        if not answered_questions:
+        """if not answered_questions:
             gain = stats.entropy(np.histogram(
                 self.responses[:, question_idx], 
                 bins='auto')[0]
             )
             if self.verbose:
                 print(f"First question - using marginal entropy: {gain:.3f}")
-            return gain
+            return gain"""
             
         info_value = 0.0
         
