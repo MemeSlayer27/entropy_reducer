@@ -6,72 +6,92 @@ from typing import List
 
 
 class VAASimulator:
-    def __init__(self, responses: np.ndarray, labels: List[str], parties: List[str], algorithm: str):
+    
+    def __init__(self, responses: np.ndarray, labels: List[str], parties: List[str]):
         """
-        Initialize the simulator with the chosen algorithm.
+        Initialize the simulator with PerfectMatchQuestionOrderer.
 
         Args:
             responses: Array of historical responses (n_candidates, n_questions).
             labels: Labels for the questions.
-            algorithm: The algorithm to use ("1" for EnhancedQuestionOrderer, "2" for PerfectMatchQuestionOrderer).
+            parties: List of parties corresponding to each candidate.
         """
         self.responses = responses
         self.labels = labels
         self.parties = parties
+        self.remaining_candidates = list(range(len(parties)))  # Start with all candidates
         self.answered_questions = []
+        self.algorithm_name = "PerfectMatchQuestionOrderer"
+        self.orderer = PerfectMatchQuestionOrderer(responses, question_labels=labels, parties=parties, verbose=True)
 
-        if algorithm == "1":
-            self.algorithm_name = "EnhancedQuestionOrderer"
-            self.orderer = EnhancedQuestionOrderer(responses, question_labels=labels, verbose=True)
-        elif algorithm == "2":
-            self.algorithm_name = "PerfectMatchQuestionOrderer"
-            self.orderer = PerfectMatchQuestionOrderer(responses, question_labels=labels, parties=parties, verbose=True)
+    def filter_candidates_by_party(self):
+        """
+        Allow the user to choose whether to include or exclude candidates based on party preferences.
+        """
+        print("List of Parties:")
+        for i, party in enumerate(set(self.parties)):
+            print(f"{i + 1}. {party}")
+
+        print("\nDo you want to:")
+        print("1. Include only certain parties")
+        print("2. Exclude certain parties")
+        print("3. Skip party filtering")
+        
+        while True:
+            choice = input("Enter your choice (1/2/3): ").strip()
+            if choice in ["1", "2", "3"]:
+                break
+            print("Invalid input! Please enter '1', '2', or '3'.")
+
+        if choice == "1":
+            # Include specific parties
+            include_input = input("Enter the numbers of the parties you WILL vote for (comma-separated): ").strip()
+            include_indices = [int(x) - 1 for x in include_input.split(",") if x.isdigit()]
+            include_parties = [list(set(self.parties))[i] for i in include_indices]
+
+            self.remaining_candidates = [
+                i for i in self.remaining_candidates if self.parties[i] in include_parties
+            ]
+
+            # Print included parties
+            print(f"\nYou chose to include the following parties: {', '.join(include_parties)}")
+
+        elif choice == "2":
+            # Exclude specific parties
+            exclude_input = input("Enter the numbers of the parties you WILL NOT vote for (comma-separated): ").strip()
+            exclude_indices = [int(x) - 1 for x in exclude_input.split(",") if x.isdigit()]
+            exclude_parties = [list(set(self.parties))[i] for i in exclude_indices]
+
+            self.remaining_candidates = [
+                i for i in self.remaining_candidates if self.parties[i] not in exclude_parties
+            ]
+            
+            # Print excluded parties
+            print(f"\nYou chose to exclude the following parties: {', '.join(exclude_parties)}")
+
         else:
-            raise ValueError(f"Unknown algorithm selection: {algorithm}")
+            # Skip party filtering
+            print("No party filtering applied.")
+
+        # Update the PerfectMatchQuestionOrderer with the filtered candidates
+        self.orderer.remaining_candidates = self.remaining_candidates
+
+        print(f"\nFiltered candidates based on party preferences. {len(self.remaining_candidates)} candidates remain.")
 
     def run_simulation(self):
         """
-        Run the command-line simulation using the chosen algorithm.
+        Run the command-line simulation using PerfectMatchQuestionOrderer.
         """
         print(f"\n--- VAA Simulator using {self.algorithm_name} ---")
-        if isinstance(self.orderer, EnhancedQuestionOrderer):
-            ordered_questions = self.orderer.order_questions()
-            for q_idx in ordered_questions:
-                question = self.labels[q_idx]
-                print(f"\n{question} (1: Totally Disagree - 5: Totally Agree)")
-                while True:
-                    try:
-                        response = int(input("Your answer (1-5): ").strip())
-                        if response not in [1, 2, 3, 4, 5]:
-                            raise ValueError
-                        break
-                    except ValueError:
-                        print("Invalid input! Please enter a number between 1 and 5.")
-                self.answered_questions.append((q_idx, response))
-        elif isinstance(self.orderer, PerfectMatchQuestionOrderer):
-            self.orderer.run_algorithm(max_matches=5)
+
+        # Step 1: Filter candidates by party preferences
+        self.filter_candidates_by_party()
+
+        # Step 2: Run the Perfect Match algorithm
+        self.orderer.run_algorithm(max_matches=5)
 
         print("\n--- Simulation Complete ---")
         print("Your answers and results have been recorded.")
-
-
-def select_algorithm():
-    """
-    Prompt user to select an algorithm and validate the choice.
-
-    Returns:
-        A string representing the selected algorithm ("1" or "2").
-    """
-    print("Choose an algorithm:")
-    print("1. EnhancedQuestionOrderer (Entropy-based)")
-    print("2. PerfectMatchQuestionOrderer (Perfect Match)")
-
-    while True:
-        choice = input("Enter the number corresponding to your choice (1/2): ").strip()
-        if choice in ["1", "2"]:
-            return choice
-        print("Invalid input! Please enter '1' or '2'.\n")
-
 
 # Main simulation script
 if __name__ == "__main__":
@@ -85,6 +105,7 @@ if __name__ == "__main__":
     data = data.dropna(thresh=nan_threshold, subset=data.columns[1:])
     data.fillna(3, inplace=True)  # Fill missing values with neutral (3)
 
+    # Extract parties
     parties = data.iloc[:, 0].tolist()
 
     # Convert responses to numeric and extract labels
@@ -93,6 +114,5 @@ if __name__ == "__main__":
     labels = list(data.columns[1:])
 
     # Choose algorithm and initialize simulator
-    algorithm_choice = select_algorithm()
-    simulator = VAASimulator(responses, labels, parties=parties, algorithm=algorithm_choice)
+    simulator = VAASimulator(responses, labels, parties=parties)
     simulator.run_simulation()

@@ -73,7 +73,7 @@ class PerfectMatchQuestionOrderer:
         # Select the question with the maximum entropy
         best_question = available_questions[np.argmax(entropies)]
         if self.verbose:
-            print(f"Selected question {best_question} with max entropy.")
+            print(f"\nSelected question {best_question} with max entropy.")
         return best_question
 
     def filter_candidates(self, question_idx: int, answer: int, filtering_mode: str = "exact"):
@@ -99,7 +99,7 @@ class PerfectMatchQuestionOrderer:
         self.answered_questions.append(question_idx)
 
         if self.verbose:
-            print(f"Filtered candidates. {len(self.remaining_candidates)} candidates remain.")
+            print(f"\nFiltered candidates. {len(self.remaining_candidates)} candidates remain.")
 
 
     def display_response_counts(self, question_idx: int):
@@ -122,7 +122,7 @@ class PerfectMatchQuestionOrderer:
         Returns:
             A string representing the selected filtering mode ("exact" or "range").
         """
-        print("Choose a filtering mode:")
+        print("\nChoose a filtering mode:")
         print("1. Exact match (candidates must answer exactly the same as you)")
         print("2. Range-based (candidates must have a maximum difference of 1 from your answer)")
         
