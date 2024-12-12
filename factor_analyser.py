@@ -80,12 +80,47 @@ class FactorAnalyzer:
     def plot_individual_factors(self):
         """Plot each significant factor pair individually"""
         factor_pairs = list(combinations(self.significant_factors, 2))
+
+        all_party_colors = {
+            "Kokoomus": "blue",
+            "Suomen Kommunistinen Puolue": "darkred",
+            "Perussuomalaiset": "yellow",
+            "RKP": "orange",
+            "Seitsemän tähden liike": "lightblue",
+            "SDP": "red",
+            "Kansalaispuolue": "green",
+            "Kommunistinen Työväenpuolue": "darkgreen",
+            "Feministinen puolue": "pink",
+            "Kristillisdemokraatit": "purple",
+            "Sitoutumaton": "gray",
+            "Sininen tulevaisuus": "lightblue",
+            "Vasemmistoliitto": "maroon",
+            "Suomen Kansa Ensin": "gold",
+            "Keskusta": "darkorange",
+            "Vihreät": "lime",
+            "Piraattipuolue": "black",
+            "Liberaalipuolue": "teal",
+            "Eläinoikeuspuolue": "brown",
+            "Itsenäisyyspuolue": "navy",
+            "Liike Nyt": "cyan",
+            "Kansanliike Suomen Puolesta": "olive",
+        }
+
+        major_party_colors = {
+            'Kokoomus': 'blue',
+            'Perussuomalaiset': 'orange',
+            'SDP': 'red',
+            'Kristillisdemokraatit': 'purple',
+            'Vasemmistoliitto': 'pink',
+            'Keskusta': 'green',
+            'Vihreät': 'lime'
+        }
         
         for i, j in factor_pairs:
             plt.figure(figsize=(10, 8))
             scatter = plt.scatter(self.factor_scores[:, i], 
                                 self.factor_scores[:, j], 
-                                c=[plt.cm.tab20(hash(p) % 20) for p in self.parties] if self.parties is not None else None,
+                                c=[major_party_colors.get(p, "gray") for p in self.parties] if self.parties is not None else None,
                                 alpha=0.6)
             
             variance_i = self.explained_variance_ratio[i] * 100
@@ -97,7 +132,7 @@ class FactorAnalyzer:
             if self.parties is not None:
                 # Add legend with unique parties
                 unique_parties = list(set(self.parties))
-                handles = [plt.scatter([], [], c=plt.cm.tab20(hash(p) % 20), label=p) for p in unique_parties]
+                handles = [plt.scatter([], [], c=major_party_colors.get(p, "gray"), label=p) for p in unique_parties]
                 plt.legend(handles=handles, title='Parties', bbox_to_anchor=(1.05, 1), loc='upper left')
             
             plt.tight_layout()
@@ -126,6 +161,15 @@ data.replace('-', np.nan, inplace=True)
 nan_threshold = (len(data.columns) - 1) * 0.8
 data = data.dropna(thresh=nan_threshold, subset=data.columns[1:])
 data.fillna(3, inplace=True)
+
+# Filter out parties with fewer than 50 candidates
+party_counts = data.iloc[:, 0].value_counts()
+data = data[data.iloc[:, 0].isin(party_counts[party_counts >= 150].index)]
+
+unique_parties = data.iloc[:, 0].unique()
+print("List of all parties in the dataset:")
+for party in unique_parties:
+    print(party)
 
 parties = data.iloc[:,0].tolist()  # Fixed toList() to tolist()
 
